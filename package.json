@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check": "next lint && next build"
   },
   "dependencies": {
     "@prisma/client": "^7.4.0",
