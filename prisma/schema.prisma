@@ -1,15 +1,102 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-model Test {
+enum EventType {
+  PAGE_VIEW
+  PRODUCT_VIEW
+  ADD_TO_CART
+  CHECKOUT_STARTED
+  PURCHASE
+  EMAIL_SENT
+  EMAIL_OPEN
+  EMAIL_CLICK
+  EMAIL_UNSUB
+}
+
+model Shop {
   id        String   @id @default(cuid())
+  shopDomain String  @unique
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customers Customer[]
+  orders    Order[]
+  events    Event[]
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Shopify identifiers
+  shopifyCustomerId String?
+  email             String?
+  firstName         String?
+  lastName          String?
+
+  // Retention metrics
+  ordersCount       Int      @default(0)
+  totalSpentCents   Int      @default(0)
+  lastOrderAt       DateTime?
+  firstOrderAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+  events Event[]
+
+  @@index([shopId])
+  @@index([shopId, email])
+  @@index([shopId, shopifyCustomerId])
+}
+
+model Order {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // Shopify identifiers
+  shopifyOrderId String?
+  orderNumber    String?
+  currency       String?
+  totalPriceCents Int     @default(0)
+  processedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([shopId, shopifyOrderId])
+  @@index([customerId])
+}
+
+model Event {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  type      EventType
+  occurredAt DateTime @default(now())
+
+  // flexible payload: productId, emailId, URL, etc.
+  data      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([shopId, occurredAt])
+  @@index([shopId, type, occurredAt])
+  @@index([customerId, occurredAt])
 }
