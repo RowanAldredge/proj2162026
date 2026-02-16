@@ -11,7 +11,11 @@
     "check": "next lint && next build",
     "postinstall": "prisma generate"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "dependencies": {
+    "@prisma/adapter-neon": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "next": "16.1.6",
     "openai": "^6.22.0",
@@ -31,6 +35,7 @@
     "eslint-config-next": "16.1.6",
     "prettier": "^3.8.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
