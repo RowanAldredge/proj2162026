@@ -1,12 +1,18 @@
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
+  // ----------------------------
+  // 1) Create or reuse demo shop
+  // ----------------------------
   const shop = await prisma.shop.upsert({
     where: { shopDomain: "demo-store.myshopify.com" },
     update: {},
     create: { shopDomain: "demo-store.myshopify.com" },
   });
 
+  // ----------------------------
+  // 2) Create demo customer
+  // ----------------------------
   const customer = await prisma.customer.create({
     data: {
       shopId: shop.id,
@@ -20,7 +26,10 @@ async function main() {
     },
   });
 
-  await prisma.order.create({
+  // ----------------------------
+  // 3) Create demo order
+  // ----------------------------
+  const order = await prisma.order.create({
     data: {
       shopId: shop.id,
       customerId: customer.id,
@@ -31,7 +40,58 @@ async function main() {
     },
   });
 
-  console.log("Seed complete ✅");
+  // ----------------------------
+  // 4) Create demo lifecycle events
+  // ----------------------------
+  await prisma.event.createMany({
+    data: [
+      {
+        shopId: shop.id,
+        customerId: customer.id,
+        type: "PRODUCT_VIEW",
+        occurredAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+        data: {
+          productHandle: "demo-product",
+          source: "seed",
+        },
+      },
+      {
+        shopId: shop.id,
+        customerId: customer.id,
+        type: "ADD_TO_CART",
+        occurredAt: new Date(Date.now() - 1000 * 60 * 45), // 45 minutes ago
+        data: {
+          productHandle: "demo-product",
+          qty: 1,
+          source: "seed",
+        },
+      },
+      {
+        shopId: shop.id,
+        customerId: customer.id,
+        type: "PURCHASE",
+        occurredAt: new Date(Date.now() - 1000 * 60 * 5), // 5 minutes ago
+        data: {
+          orderNumber: order.orderNumber,
+          totalPriceCents: order.totalPriceCents,
+          source: "seed",
+        },
+      },
+      {
+        shopId: shop.id,
+        customerId: customer.id,
+        type: "EMAIL_SENT",
+        occurredAt: new Date(), // now
+        data: {
+          templateKey: "post_purchase_1",
+          subject: "Thanks for your order!",
+          source: "seed",
+        },
+      },
+    ],
+  });
+
+  console.log("Seed complete ✅ (Shop, Customer, Order, Events created)");
 }
 
 main()
