@@ -8,7 +8,14 @@ export type LifecycleStage =
 
 export type Mission = "CART_RECOVERY" | "WINBACK";
 
-export type NextEmailKey = "cart_recovery_1" | "winback_1" | "stage_nurture_1";
+// ✅ Change 1: stage-specific nurture keys (simple keys)
+export type NextEmailKey =
+  | "cart_recovery_1"
+  | "winback_1"
+  | "post_purchase_1"
+  | "repeat_builder_1"
+  | "vip_loyalty_1"
+  | "browse_nurture_1";
 
 export type LifecycleDecision = {
   stage: LifecycleStage;
@@ -28,8 +35,14 @@ const WINBACK_INACTIVE_DAYS = 75;
 // -----------------------------
 // Stage = stable identity
 // -----------------------------
-export function computeStage(customer: Pick<Customer, "ordersCount" | "totalSpentCents">): LifecycleStage {
-  if (customer.ordersCount >= VIP_MIN_ORDERS || customer.totalSpentCents >= VIP_MIN_SPEND_CENTS) return "VIP";
+export function computeStage(
+  customer: Pick<Customer, "ordersCount" | "totalSpentCents">,
+): LifecycleStage {
+  if (
+    customer.ordersCount >= VIP_MIN_ORDERS ||
+    customer.totalSpentCents >= VIP_MIN_SPEND_CENTS
+  )
+    return "VIP";
   if (customer.ordersCount >= 2) return "REPEAT_BUYER";
   if (customer.ordersCount === 1) return "FIRST_TIME_BUYER";
   return "WINDOW_SHOPPER";
@@ -52,27 +65,46 @@ export function computeMissions(args: {
     const daysSince = diffDays(now, args.customer.lastOrderAt);
     if (daysSince >= WINBACK_INACTIVE_DAYS) {
       missions.push("WINBACK");
-      reason.push(`WINBACK: lastOrderAt was ${daysSince}d ago (>= ${WINBACK_INACTIVE_DAYS}d).`);
+      reason.push(
+        `WINBACK: lastOrderAt was ${daysSince}d ago (>= ${WINBACK_INACTIVE_DAYS}d).`,
+      );
     }
   }
 
   // CART_RECOVERY: cart/checkout in last 24h and no purchase AFTER that event
-  const lookback = new Date(now.getTime() - CART_LOOKBACK_HOURS * 60 * 60 * 1000);
+  const lookback = new Date(
+    now.getTime() - CART_LOOKBACK_HOURS * 60 * 60 * 1000,
+  );
 
   const recentCartOrCheckout = args.events
     .filter((e) => e.occurredAt >= lookback)
-    .filter((e) => e.type === EventType.ADD_TO_CART || e.type === EventType.CHECKOUT_STARTED)
+    .filter(
+      (e) =>
+        e.type === EventType.ADD_TO_CART ||
+        e.type === EventType.CHECKOUT_STARTED,
+    )
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
 
-  if (recentCartOrCheckout) {
+  // ✅ Change 2: add non-trigger reasons for cart recovery
+  if (!recentCartOrCheckout) {
+    reason.push(
+      `CART_RECOVERY: not active (no ADD_TO_CART or CHECKOUT_STARTED in last ${CART_LOOKBACK_HOURS}h).`,
+    );
+  } else {
     const purchaseAfter = args.events.some(
-      (e) => e.type === EventType.PURCHASE && e.occurredAt > recentCartOrCheckout.occurredAt,
+      (e) =>
+        e.type === EventType.PURCHASE &&
+        e.occurredAt > recentCartOrCheckout.occurredAt,
     );
 
     if (!purchaseAfter) {
       missions.push("CART_RECOVERY");
       reason.push(
-        `CART_RECOVERY: ${recentCartOrCheckout.type} at ${recentCartOrCheckout.occurredAt.toISOString()} with no PURCHASE after.`,
+        `CART_RECOVERY: active (${recentCartOrCheckout.type} at ${recentCartOrCheckout.occurredAt.toISOString()} with no PURCHASE after).`,
+      );
+    } else {
+      reason.push(
+        `CART_RECOVERY: not active (purchase occurred after ${recentCartOrCheckout.type} at ${recentCartOrCheckout.occurredAt.toISOString()}).`,
       );
     }
   }
@@ -86,14 +118,50 @@ export function computeMissions(args: {
 // -----------------------------
 // Next Best Email (simple V1)
 // -----------------------------
-export function decideNextEmail(stage: LifecycleStage, missions: Mission[]): { nextEmailKey: NextEmailKey; reason: string } {
+// ✅ Change 3: stage-specific nurture keys instead of generic stage_nurture_1
+export function decideNextEmail(
+  stage: LifecycleStage,
+  missions: Mission[],
+): { nextEmailKey: NextEmailKey; reason: string } {
   if (missions.includes("CART_RECOVERY")) {
-    return { nextEmailKey: "cart_recovery_1", reason: "CART_RECOVERY mission active → send cart_recovery_1." };
+    return {
+      nextEmailKey: "cart_recovery_1",
+      reason: "CART_RECOVERY mission active → send cart_recovery_1.",
+    };
   }
   if (missions.includes("WINBACK")) {
-    return { nextEmailKey: "winback_1", reason: "WINBACK mission active → send winback_1." };
+    return {
+      nextEmailKey: "winback_1",
+      reason: "WINBACK mission active → send winback_1.",
+    };
   }
-  return { nextEmailKey: "stage_nurture_1", reason: `No missions active → send stage_nurture_1 for stage ${stage}.` };
+
+  switch (stage) {
+    case "VIP":
+      return {
+        nextEmailKey: "vip_loyalty_1",
+        reason: "No missions active → stage VIP nurture → vip_loyalty_1.",
+      };
+    case "REPEAT_BUYER":
+      return {
+        nextEmailKey: "repeat_builder_1",
+        reason:
+          "No missions active → stage REPEAT_BUYER nurture → repeat_builder_1.",
+      };
+    case "FIRST_TIME_BUYER":
+      return {
+        nextEmailKey: "post_purchase_1",
+        reason:
+          "No missions active → stage FIRST_TIME_BUYER nurture → post_purchase_1.",
+      };
+    case "WINDOW_SHOPPER":
+    default:
+      return {
+        nextEmailKey: "browse_nurture_1",
+        reason:
+          "No missions active → stage WINDOW_SHOPPER nurture → browse_nurture_1.",
+      };
+  }
 }
 
 // -----------------------------
@@ -105,7 +173,11 @@ export function computeLifecycleDecision(args: {
   now?: Date;
 }): LifecycleDecision {
   const stage = computeStage(args.customer);
-  const { missions, reason: missionReason } = computeMissions({ customer: args.customer, events: args.events, now: args.now });
+  const { missions, reason: missionReason } = computeMissions({
+    customer: args.customer,
+    events: args.events,
+    now: args.now,
+  });
   const next = decideNextEmail(stage, missions);
 
   return {
